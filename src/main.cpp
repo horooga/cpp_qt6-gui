@@ -22,15 +22,19 @@ class NetworkInteractionSettings : public QMainWindow {
 		auto *mainLayout = new QHBoxLayout(central);
 
 		tree = new QTreeWidget;
-		tree->setHeaderLabel("Настройки сетевого взаимодействия");
+		tree->setHeaderLabel("Настройка сетевого взаимодействия");
 		mainLayout->addWidget(tree, 1);
 
 		QTreeWidgetItem *serversItem = new QTreeWidgetItem(tree);
 		serversItem->setText(0, "Серверы");
 		serversItem->setFlags(serversItem->flags() & ~Qt::ItemIsSelectable);
 
-		addStationSettings(serversItem, "01 - Новая станция", 25923, 5);
-		addStationSettings(serversItem, "02 - Станция B", 26000, 10);
+		stations = parseConfig();
+		Station new_station = Station();
+		addStation(serversItem, new_station);
+		for (const auto &station : stations) {
+			addStation(serversItem, station);
+		}
 
 		tree->expandItem(serversItem);
 
@@ -63,21 +67,9 @@ class NetworkInteractionSettings : public QMainWindow {
 		connect(saveButton, &QPushButton::clicked, this,
 				&NetworkInteractionSettings::onSaveClicked);
 		connect(stationNameEdit, &QLineEdit::textChanged, this,
-				[this](const QString &text) {
-					if (!validateStationName(text)) {
-						stationNameEdit->setStyleSheet(
-							"background-color: rgb(255, 200, "
-							"200); border: 1px solid red;");
-					} else {
-						stationNameEdit->setStyleSheet("");
-					}
-				});
-		connect(stationNameEdit, &QLineEdit::editingFinished, this, [this]() {
-			QString trimmed = stationNameEdit->text().trimmed();
-			if (stationNameEdit->text() != trimmed) {
-				stationNameEdit->setText(trimmed);
-			}
-		});
+				&NetworkInteractionSettings::onStationNameChanged);
+		connect(stationNameEdit, &QLineEdit::editingFinished, this,
+				&NetworkInteractionSettings::onStationNameEditingFinished);
 
 		if (serversItem->childCount() > 0) {
 			tree->setCurrentItem(serversItem->child(0));
@@ -98,8 +90,11 @@ class NetworkInteractionSettings : public QMainWindow {
 
 			formLayout->setEnabled(true);
 			saveButton->setEnabled(true);
-
 			currentItem = current;
+		} else if (current->text(0) == "Серверы") {
+			formLayout->setEnabled(false);
+			saveButton->setEnabled(false);
+			currentItem = nullptr;
 		}
 	}
 
@@ -109,15 +104,47 @@ class NetworkInteractionSettings : public QMainWindow {
 		currentItem->setText(0, stationNameEdit->text());
 		currentItem->setData(0, Qt::UserRole + 1, stationPortSpin->value());
 		currentItem->setData(0, Qt::UserRole + 2, stationTimeoutSpin->value());
+
+		bool containsStation = std::any_of(
+			stations.begin(), stations.end(), [&](const Station &s) {
+				return QString::fromStdString(s.name) ==
+					   stationNameEdit->text();
+			});
+
+		if (!containsStation) {
+			Station station = Station();
+			station.name = stationNameEdit->text().toStdString();
+			station.port = stationPortSpin->value();
+			station.timeout1 = stationTimeoutSpin->value();
+			stations.push_back(station);
+		}
+
+		writeConfig(stations);
+	}
+
+	void onStationNameChanged(const QString &text) {
+		if (!validateStationName(text)) {
+			stationNameEdit->setStyleSheet(
+				QString::fromUtf8("background-color: rgb(255, 200, 200); "
+								  "border: 1px solid red;"));
+		} else {
+			stationNameEdit->setStyleSheet(QString());
+		}
+	}
+
+	void onStationNameEditingFinished() {
+		QString trimmed = stationNameEdit->text().trimmed();
+		if (stationNameEdit->text() != trimmed) {
+			stationNameEdit->setText(trimmed);
+		}
 	}
 
   private:
-	void addStationSettings(QTreeWidgetItem *serversItem, const QString &name,
-							int port, int timeout) {
+	void addStation(QTreeWidgetItem *serversItem, const Station &station) {
 		QTreeWidgetItem *stationItem = new QTreeWidgetItem(serversItem);
-		stationItem->setText(0, name);
-		stationItem->setData(0, Qt::UserRole + 1, port);
-		stationItem->setData(0, Qt::UserRole + 2, timeout);
+		stationItem->setText(0, QString::fromStdString(station.name));
+		stationItem->setData(0, Qt::UserRole + 1, station.port);
+		stationItem->setData(0, Qt::UserRole + 2, station.timeout1);
 	}
 
 	QTreeWidget *tree;
@@ -127,6 +154,7 @@ class NetworkInteractionSettings : public QMainWindow {
 	QSpinBox *stationTimeoutSpin;
 	QPushButton *saveButton;
 	QTreeWidgetItem *currentItem = nullptr;
+	std::vector<Station> stations;
 };
 
 #include "main.moc"

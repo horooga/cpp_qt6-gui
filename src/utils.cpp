@@ -1,28 +1,62 @@
 #include "cpp_qt-gui/utils.h"
 #include <QString>
+#include <cstdlib>
 #include <fstream>
-#include <iostream>
 #include <string>
 
 bool validateStationName(const QString &name) {
 	return !name.trimmed().isEmpty();
 }
 
-StationSettings parseStationSettingsFile() {
-	std::ifstream file("$HOME/.kaskad-scada/networkinteraction.ini");
+std::pair<std::string, std::string> parseValue(const std::string &line) {
+	int delimPos = line.find('=');
+	return {line.substr(0, delimPos), line.substr(delimPos + 1)};
+}
+
+std::vector<Station> parseConfig() {
+	const char *home = std::getenv("HOME");
+	std::ifstream file(std::string(home) +
+					   "/.kaskad-scada/networkinteraction.ini");
 	if (!file.is_open()) {
-		std::cerr << "Could not open the file!" << std::endl;
-		return 1;
+		return {};
 	}
 
-	StationSettings settings;
-	std::vector<StationSettings> stations;
+	Station station;
+	std::vector<Station> stations;
 
 	std::string line;
 	while (std::getline(file, line)) {
-		settings.stationName = line;
+		if (line.empty() || line[0] == '#') {
+			continue;
+		}
+		if (!line.find('=')) {
+			station.name = line;
+			stations.push_back(station);
+			continue;
+		}
+		auto [key, value] = parseValue(line);
+		if (key == "port") {
+			station.port = std::stoi(value);
+		} else if (key == "timeout1") {
+			station.timeout1 = std::stoi(value);
+		} else if (key == "address1") {
+			station.address1 = value;
+		}
 	}
-
 	file.close();
-	return 0;
+	return std::vector<Station>(stations.begin(), stations.end());
+}
+
+void writeConfig(const std::vector<Station> &stations) {
+	const char *home = std::getenv("HOME");
+	std::ofstream file(std::string(home) +
+					   "/.kaskad-scada/networkinteraction.ini");
+
+	for (const auto &station : stations) {
+		file << station.name << "\n";
+		file << "port=" << station.port << "\n";
+		file << "timeout1=" << station.timeout1 << "\n";
+		file << "address1=" << station.address1 << "\n";
+	}
+	file.close();
 }
